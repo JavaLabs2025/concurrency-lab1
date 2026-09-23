@@ -1,9 +1,5 @@
 package org.labs;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.*;
-
 public final class Simulation {
 
     private final int programmerCount;
@@ -42,73 +38,48 @@ public final class Simulation {
         this.waiterDelay = waiterDelay;
     }
 
-    public Result run() throws InterruptedException {
+    public Result run() {
+        FoodStorage storage = new FoodStorage(foodAmount);
+        DiningTable table = new DiningTable(programmerCount);
 
-        FoodStorage storage =
-                new FoodStorage(foodAmount);
+        try (
+                var waiters = new Waiters(storage, waiterDelay, waiterCount);
+                var programmers = new Programmers(table, waiters, programmerCount, eatingDelay, discussionDelay)
+        ) {
+            return new Result(programmers);
+        }
+    }
 
-        DiningTable table =
-                new DiningTable(programmerCount);
-
-        ExecutorService waiterExecutor = Executors.newFixedThreadPool(waiterCount);
-
-        List<Programmer> programmers =
-                new ArrayList<>();
-
-        for (int i = 0; i < programmerCount; i++) {
-            programmers.add(new Programmer(
-                    i,
-                    table,
-                    waiterExecutor,
-                    waiterDelay,
-                    storage,
-                    discussionDelay,
-                    eatingDelay
+    public record Result(Programmers programmers) {
+        public void print() {
+            programmers.list().forEach(p -> System.out.printf(
+                    "Programmer %d: %d portions%n",
+                    p.id(),
+                    p.eaten()
             ));
+
+            System.out.println(
+                    "\nTotal eaten: " + totalEaten() +
+                            "\nMax difference: " + (maxEaten() - minEaten())
+            );
         }
 
-        ExecutorService programmerExecutor = Executors.newFixedThreadPool(programmerCount);
-        for (Programmer programmer : programmers) {
-            programmerExecutor.execute(programmer);
-        }
-
-        var result = new Result(programmers);
-
-        waitForSimulation(storage);
-
-        programmerExecutor.shutdownNow();
-        waiterExecutor.shutdownNow();
-        programmerExecutor.close();
-        waiterExecutor.close();
-
-        return result;
-    }
-
-    private void waitForSimulation(FoodStorage storage) throws InterruptedException {
-        while (storage.remaining() > 0) {
-            Thread.sleep(10);
-        }
-
-        Thread.sleep(waiterDelay * 2L + 100);
-    }
-
-    public record Result(List<Programmer> programmers) {
         public int totalEaten() {
-            return programmers.stream()
-                    .mapToInt(Programmer::eaten)
+            return programmers.list().stream()
+                    .mapToInt(Programmers.Programmer::eaten)
                     .sum();
         }
 
         public int minEaten() {
-            return programmers.stream()
-                    .mapToInt(Programmer::eaten)
+            return programmers.list().stream()
+                    .mapToInt(Programmers.Programmer::eaten)
                     .min()
                     .orElse(0);
         }
 
         public int maxEaten() {
-            return programmers.stream()
-                    .mapToInt(Programmer::eaten)
+            return programmers.list().stream()
+                    .mapToInt(Programmers.Programmer::eaten)
                     .max()
                     .orElse(0);
         }

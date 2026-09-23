@@ -2,7 +2,7 @@ package org.labs;
 
 public final class Main {
 
-    public static void main(String[] args) throws InterruptedException {
+    public static void main(String[] args) {
         Simulation simulation = new Simulation(
                 7,
                 2,
@@ -21,15 +21,6 @@ public final class Main {
                 "\nTiming: " + (endTime - startTime) / 1000d + "s\n"
         );
 
-        result.programmers().forEach(p -> System.out.printf(
-                "Programmer %d: %d portions%n",
-                p.id(),
-                p.eaten()
-        ));
-
-        System.out.println(
-                "\nTotal eaten: " + result.totalEaten() +
-                "\nMax difference: " + (result.maxEaten() - result.minEaten())
-        );
+        result.print();
     }
 }

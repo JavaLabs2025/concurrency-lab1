@@ -17,8 +17,4 @@ public class FoodStorage {
     public boolean takePortion() {
         return portions.getAndDecrement() > 0;
     }
-
-    public int remaining() {
-        return portions.get();
-    }
 }
