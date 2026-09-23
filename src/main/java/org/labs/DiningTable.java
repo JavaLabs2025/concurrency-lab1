@@ -2,15 +2,13 @@ package org.labs;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Random;
-import java.util.concurrent.ThreadLocalRandom;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.IntStream;
 
 public final class DiningTable {
 
+    private final int programmers;
     private final List<Lock> spoons = new ArrayList<>();
 
     public DiningTable(int programmers) {
@@ -18,37 +16,23 @@ public final class DiningTable {
             throw new IllegalArgumentException("At least 2 programmers are required");
         }
 
+        this.programmers = programmers;
         IntStream.range(0, programmers).forEach(i -> spoons.add(new ReentrantLock()));
     }
 
-    public EatingSession tryStartEating(int programmerId) throws InterruptedException {
-        Lock left = null;
-        Lock right = null;
-        try {
-            left = spoons.get(programmerId);
-            right = spoons.get((programmerId + 1) % spoons.size());
+    public EatingSession startEating(int programmerId) {
+        Lock left = spoons.get(programmerId);
+        Lock right = spoons.get((programmerId + 1) % spoons.size());
 
+        if (programmerId + 1 == programmers) {
+            right.lock();
             left.lock();
-
-            boolean rightAcquired = right.tryLock(ThreadLocalRandom.current().nextLong(50), TimeUnit.MILLISECONDS);
-            if (!rightAcquired) {
-                left.unlock();
-                return null;
-            }
-
-            return new EatingSession(left, right);
-        } catch (InterruptedException e) {
-            if (left != null) {
-                left.unlock();
-            }
-
-            if (right != null) {
-                right.unlock();
-            }
-
-            Thread.currentThread().interrupt();
-            throw e;
+        } else {
+            left.lock();
+            right.lock();
         }
+
+        return new EatingSession(left, right);
     }
 
     public static final class EatingSession implements AutoCloseable {

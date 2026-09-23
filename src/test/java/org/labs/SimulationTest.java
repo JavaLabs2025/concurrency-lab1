@@ -29,7 +29,7 @@ class SimulationTest {
     @CsvSource({
             "2, 1, 50",
             "5, 2, 500",
-            "8, 3, 800"
+            "8, 3, 803"
     })
     void servesExactlyAllFoodWithoutStarvationOrDeadlock(
             int programmerCount,
@@ -45,5 +45,15 @@ class SimulationTest {
 
         assertEquals(foodAmount, result.totalEaten());
         assertTrue(result.minEaten() > 0, "every programmer should get to eat at least once");
+        // Programmers eat in lockstep rounds gated by a CyclicBarrier: spoon
+        // acquisition always blocks until it succeeds (deadlock-free by lock
+        // ordering), so every programmer's eaten count increases by exactly 1 each
+        // completed round. The spread is provably 0 between rounds, and at most 1
+        // overall (from the final round, where food can run out mid-round after
+        // some but not all programmers were served) — not just an emergent trend.
+        assertTrue(
+                result.maxEaten() - result.minEaten() <= 1,
+                "eaten-count spread should never exceed 1, was " + (result.maxEaten() - result.minEaten())
+        );
     }
 }

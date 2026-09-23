@@ -1,18 +1,22 @@
 package org.labs;
 
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.BrokenBarrierException;
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class Programmers implements AutoCloseable {
 
     private final List<Programmer> programmers;
     private final ExecutorService executor;
+    private final CyclicBarrier roundBarrier;
+    private final AtomicBoolean simulationOver = new AtomicBoolean(false);
 
     private final DiningTable diningTable;
     private final Waiters waiters;
@@ -29,6 +33,7 @@ public class Programmers implements AutoCloseable {
     ) {
         this.programmers = new ArrayList<>(programmerCount);
         this.executor = Executors.newFixedThreadPool(programmerCount);
+        this.roundBarrier = new CyclicBarrier(programmerCount, this::endRound);
         this.diningTable = diningTable;
         this.waiters = waiters;
         this.discussionDelay = discussionDelay;
@@ -41,8 +46,15 @@ public class Programmers implements AutoCloseable {
         for (int i = 0; i < count; i++) {
             var programmer = new Programmer(i);
 
-            executor.execute(programmer);
             programmers.add(programmer);
+            executor.execute(programmer);
+        }
+    }
+
+    private void endRound() {
+        boolean anyoneAte = programmers.stream().anyMatch(Programmer::gotFoodThisRound);
+        if (!anyoneAte) {
+            simulationOver.set(true);
         }
     }
 
@@ -58,8 +70,7 @@ public class Programmers implements AutoCloseable {
     public class Programmer implements Runnable {
 
         private final int id;
-        private boolean hasSoup;
-        private boolean alreadyDiscussed;
+        private volatile boolean gotFoodThisRound;
         private int eaten;
 
         public Programmer(int id) {
@@ -74,57 +85,38 @@ public class Programmers implements AutoCloseable {
             return id;
         }
 
+        private boolean gotFoodThisRound() {
+            return gotFoodThisRound;
+        }
+
         @Override
         public void run() {
             try {
-                while (!Thread.currentThread().isInterrupted()) {
-                    if (!alreadyDiscussed) {
-                        discuss();
-                    }
+                while (!simulationOver.get()) {
+                    gotFoodThisRound = waiters.getPortion().get();
 
-                    if (!hasSoup) {
-                        if (!getPortion()) {
-                            break;
+                    if (gotFoodThisRound) {
+                        try (DiningTable.EatingSession session = diningTable.startEating(id)) {
+                            eat();
                         }
                     }
 
-                    try (DiningTable.EatingSession session = diningTable.tryStartEating(id)) {
-                        if (session == null) {
-                            continue;
-                        }
-                        eat();
-                    }
+                    discuss();
+                    roundBarrier.await();
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-            }
-        }
-
-        private boolean getPortion() throws InterruptedException {
-            Future<Boolean> future = waiters.getPortion();
-
-            try {
-                boolean received = future.get();
-
-                if (received) {
-                    hasSoup = true;
-                }
-
-                return received;
-            } catch (ExecutionException e) {
-                throw new RuntimeException("Waiter failed to serve portion", e.getCause());
+            } catch (BrokenBarrierException | ExecutionException e) {
+                throw new RuntimeException(e);
             }
         }
 
         private void discuss() throws InterruptedException {
             Thread.sleep(discussionDelay);
-            alreadyDiscussed = true;
         }
 
         private void eat() throws InterruptedException {
             Thread.sleep(eatingDelay);
-            hasSoup = false;
-            alreadyDiscussed = false;
             eaten++;
         }
     }
